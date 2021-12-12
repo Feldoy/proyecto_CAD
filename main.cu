@@ -1,44 +1,51 @@
-// C++ implementation of the approach
-#include <bits/stdc++.h>
+#include <iostream>
+#include <cstdio>
+#include <time.h>
+#include <cuda_runtime.h>
+#include <stdio.h>
+
 using namespace std;
 
-// Function to print the intersection
-void findIntersection(int intervals[][2], int N)
-{
-	// First interval
-	int l = intervals[0][0];
-	int r = intervals[0][1];
+void Read(int** A, int** B, int *la, int *lb, const char *filename) {    
+	FILE *fp;
+	fp = fopen(filename, "r");
+  	fscanf(fp, "%d %d\n", la, lb);
 
-	// Check rest of the intervals and find the intersection
-	for (int i = 1; i < N; i++) {
+	int* Atemp = new int[(*la) * 2];
+	int* Btemp = new int[(*lb) * 2];
 
-		// If no intersection exists
-		if (intervals[i][0] > r || intervals[i][1] < l) {
-			cout << -1;
-			return;
-		}
-
-		// Else update the intersection
-		else {
-			l = max(l, intervals[i][0]);
-			r = min(r, intervals[i][1]);
-		}
+	for (int i = 0; i < (*la); i++){
+		fscanf(fp, "%d %d\n", &(Atemp[2*i]), &(Atemp[2*i + 1]));
 	}
 
-	cout << "[" << l << ", " << r << "]";
+	for (int j = 0; j < (*lb); j++){
+		fscanf(fp, "%d %d\n", &(Btemp[2*j]), &(Btemp[2*j + 1]));
+	}
+
+	*A = Atemp;
+	*B = Btemp;
 }
 
-// Driver code
-int main()
-{
-	int intervals[][2] = {
-		{ 1, 6 },
-		{ 2, 8 },
-		{ 3, 10 },
-		{ 5, 8 }
-	};
-	int N = sizeof(intervals) / sizeof(intervals[0]);
-	findIntersection(intervals, N);
+void Write(int* intersecciones, int N, const char *filename) {
+	FILE *fp;
+	fp = fopen(filename, "w");
+	for (int i = 0; i < N; i++){
+		if (i%2 == 0){
+			fprintf(fp, "%d %d\n", intersecciones[i], intersecciones[i + 1]);
+		}
+	}
+	fclose(fp);
+}
+
+
+bool seInterseca(int aStart, int aEnd, int bStart, int bEnd){
+
+	if ((aEnd < bStart) || (bEnd < aStart)){
+		return false;
+	}
+	else{
+		return true;
+	}
 }
 
 /*
@@ -48,3 +55,60 @@ for i en el largo de A
     Si A[i] se intersecta con B[j]
         Guardar (i,j)
 */
+void interseccionConjuntos(int* A, int *B, int *intersecciones,
+							int la, int lb){		
+	
+	int aStart, aEnd, bStart, bEnd;
+	int posicion = 0;
+	
+	for (int i = 0; i < la; i++){
+		aStart = A[2*i];
+		aEnd = A[2*i + 1];
+
+		for (int j = 0; j < lb; j++){
+			bStart = B[2*j];
+			bEnd = B[2*j + 1];
+
+			if (seInterseca(aStart, aEnd, bStart, bEnd)){
+				//Guardo el número del intervalo (partiendo de 0)
+				intersecciones[posicion] = i;
+				intersecciones[posicion + 1] = j;
+				posicion += 2;
+			}
+		}
+	}
+}
+
+int main(int argc, char **argv){
+
+	// Largo del arreglo A y B, respectivamente.
+	int la, lb;
+	// Conjuntos de intervalos A y B.
+	int *A, *B;
+	int *intersecciones;
+	clock_t t1, t2;
+	
+	char filename[] = {"input.txt\0"};
+	char outputFilename[] = {"output.txt\0"};
+
+	Read(&A, &B, &la, &lb, filename); 
+	
+	// Parte CPU
+
+	intersecciones = new int[la*lb*2];
+
+	t1 = clock();
+	interseccionConjuntos(A, B, intersecciones, la, lb);
+	t2 = clock();
+
+	double ms = 1000.0 * (double)(t2 -t1) / CLOCKS_PER_SEC;
+
+	std::cout << "Tiempo algoritmo en CPU = " << ms << "[ms]" << std::endl;
+	
+	int N = sizeof(intersecciones);
+
+	Write(intersecciones, N, outputFilename);
+
+	delete[] intersecciones;
+
+}
