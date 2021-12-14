@@ -71,13 +71,6 @@ bool seIntersecta(int aStart, int aEnd, int bStart, int bEnd){
 	}
 }
 
-/*
-for i en el largo de A
-    for j in el largo de B
-
-    Si A[i] se intersecta con B[j]
-        Guardar (i,j)
-*/
 void interseccionConjuntos(int* A, int *B,int *intersecciones, 
 						int la, int lb){		
 	
@@ -94,7 +87,6 @@ void interseccionConjuntos(int* A, int *B,int *intersecciones,
 
 			if (seIntersecta(aStart, aEnd, bStart, bEnd)){
 				//Guardo el número del intervalo (partiendo de 0)
-				printf("%d ", posicion);
 				intersecciones[posicion] = i;
 				intersecciones[posicion + 1] = j;
 				posicion += 2;
