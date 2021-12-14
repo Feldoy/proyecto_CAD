@@ -26,6 +26,26 @@ void Read(int** A, int** B, int *la, int *lb, const char *filename) {
 	*B = Btemp;
 }
 
+void ReadSoA(int** A, int** B, int *la, int *lb, const char *filename) {    
+	FILE *fp;
+	fp = fopen(filename, "r");
+  	fscanf(fp, "%d %d\n", la, lb);
+
+	int* Atemp = new int[(*la) * 2];
+	int* Btemp = new int[(*lb) * 2];
+
+	for (int i = 0; i < (*la); i++){
+		fscanf(fp, "%d %d\n", &(Atemp[i]), &(Atemp[*la + i]));
+	}
+
+	for (int j = 0; j < (*lb); j++){
+		fscanf(fp, "%d %d\n", &(Btemp[j]), &(Btemp[*lb + j]));
+	}
+
+	*A = Atemp;
+	*B = Btemp;
+}
+
 void Write(int* intersecciones, int N, const char *filename) {
 	FILE *fp;
 	fp = fopen(filename, "w");
@@ -92,6 +112,10 @@ int main(int argc, char **argv){
 	char outputFilename[] = {"output.txt\0"};
 
 	Read(&A, &B, &la, &lb, filename); 
+
+	for (int i = 0; i < lb*2; i++){
+		std::cout << B[i] << std::endl;
+	}
 	
 	// Parte CPU
 
@@ -110,5 +134,4 @@ int main(int argc, char **argv){
 	Write(intersecciones, N, outputFilename);
 
 	delete[] intersecciones;
-
 }
