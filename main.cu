@@ -157,6 +157,30 @@ __device__ bool isAnIntersect(int aStart, int aEnd, int bStart, int bEnd){
 }
 
 
+__global__ void setIntersection_Kernel1(int *p_A,int *p_B,int la,int lb, int *intercepts_1){
+	int tid = threadIdx.x + blockIdx.x*blockDim.x;
+	if(tid < la){
+		int aStart = p_A[2*tid];
+		int aEnd = p_A[2*tid + 1];
+		int tempInterFounds = 0;
+				
+		for(int j=0;j<lb; j++){
+
+			int bStart = p_B[2*j];
+			int bEnd = p_B[2*j + 1];
+			if(isAnIntersect(aStart, aEnd, bStart, bEnd)){ 
+				intercepts_1[tid * 2 * lb + 2*tempInterFounds] = tid; 
+				intercepts_1[tid * 2 * lb + 2*tempInterFounds + 1] = j;
+	
+				tempInterFounds += 1;
+
+			}
+		}
+	}
+	
+}
+
+
 __global__ void setIntersection_Kernel2(int *A, int *B, int lA, int lB, int *intercepts, int *lenIntercepts){
 	int Id = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -192,9 +216,6 @@ __global__ void setIntersection_Kernel2(int *A, int *B, int lA, int lB, int *int
 			tempInterFounds += 1;
 		}
 	}
-
-
-
 }
 
 int main(int argc, char **argv){
@@ -225,13 +246,57 @@ int main(int argc, char **argv){
 
 	double ms = 1000.0 * (double)(t2 -t1) / CLOCKS_PER_SEC;
 
-	std::cout << "Tiempo algoritmo en CPU = " << ms << "[ms]" << std::endl;
+	std::cout << "\n\nTiempo algoritmo en CPU = " << ms << "[ms]" << std::endl;
 
 	Write(intersecciones, la, lb, outputFilename);
 
 	delete[] intersecciones;
 
-	//Kernel 2 - Binary Search + ...
+
+		//========  Kernel 1 - básico  ============
+
+	//Instanciamos variables de tiempo
+	cudaEvent_t ct1_1, ct2_1;
+	float dt1;
+	int bs1 = 256;
+	int gs1 = (int)ceil((float) la / bs1);
+	
+	// Referencia a intervalos A y B
+	int *p_A;
+	int *p_B;
+	int *intercepts_1, *interceptsdev1 ;  //,*lenIntercepts1
+	
+	cudaMalloc((void**)&p_A, 2*la * sizeof(int));
+	cudaMalloc((void**)&p_B, 2*lb * sizeof(int));
+
+	cudaMalloc((void**)&interceptsdev1, 2 * la * lb * sizeof(int));
+    cudaMemset(interceptsdev1, -1, (2* la* lb) * sizeof(int));
+
+	cudaMemcpy(p_A, A,2*la*sizeof(int),cudaMemcpyHostToDevice);
+	cudaMemcpy(p_B, B,2*lb*sizeof(int),cudaMemcpyHostToDevice);
+
+	cudaEventCreate(&ct1_1);
+    cudaEventCreate(&ct2_1);
+    cudaEventRecord(ct1_1);
+	setIntersection_Kernel1<<<gs1, bs1>>>(p_A,p_B,la,lb, interceptsdev1);	
+	cudaEventRecord(ct2_1);
+    cudaEventSynchronize(ct2_1);
+    cudaEventElapsedTime(&dt1, ct1_1, ct2_1);
+
+    intercepts_1 = new int[2 * la * lb];
+    cudaMemcpy(intercepts_1, interceptsdev1, (2 * la * lb) * sizeof(int), cudaMemcpyDeviceToHost);
+	
+	std::cout << "\nTiempo algoritmo en GPU1 = " << dt1 << "[ms]" << std::endl;
+	
+	WriteHash(intercepts_1, la, lb, "outputkernel1.txt");
+
+	cudaFree(p_A);
+	cudaFree(p_B);
+	
+	delete[] intercepts_1;
+	
+	
+	//======   Kernel 2 - Binary Search + ...  =========
 
 	cudaEvent_t ct1, ct2;
 	int *Adev, *Bdev;
@@ -271,7 +336,7 @@ int main(int argc, char **argv){
     intercepts = new int[2 * la * lb];
     cudaMemcpy(intercepts, interceptsdev, (2 * la * lb) * sizeof(int), cudaMemcpyDeviceToHost);
 
-    printf("\nTiempo GPU 2 + Binary Searchs: %f[ms]\n", dt);
+    printf("\nTiempo GPU 2 + Binary Searchs: %f[ms]\n\n", dt);
     
     WriteHash(intercepts, la, lb, "outputkernel2.txt");
 
