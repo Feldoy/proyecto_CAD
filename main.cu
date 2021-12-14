@@ -61,6 +61,23 @@ void Write(int* intersecciones, int la, int lb, const char *filename) {
 	fclose(fp);
 }
 
+void WriteHash(int* intersecciones, int la, int lb, const char *filename) {
+	FILE *fp;
+	fp = fopen(filename, "w");
+
+	for (int i = 0; i < la; i++){
+		for (int j = 0; j < lb; j++){
+			if (intersecciones[2*lb*i + 2*j] == -1){
+				break;
+			}
+			fprintf(fp, "%d %d\n", intersecciones[2*lb*i + 2*j], intersecciones[2*lb*i + 2*j + 1]);
+		}
+
+	}
+
+	fclose(fp);
+}
+
 bool seIntersecta(int aStart, int aEnd, int bStart, int bEnd){
 
 	if ((aEnd < bStart) || (bEnd < aStart)){
@@ -93,6 +110,91 @@ void interseccionConjuntos(int* A, int *B,int *intersecciones,
 			}
 		}
 	}
+}
+
+
+//Buscar el indice del intervalo de B que termina antes de que sStart inicie.
+__device__ void binarySearchEnds(int *B, int lB, int aStart, int *slice){
+	int low = 0;
+	int high = lB - 1;
+
+	while(low <= high){
+		int mid = (low + high)/2;
+
+		if (B[2*mid + 1] >= aStart){
+			high = mid - 1;
+		} else { // mid > target
+			low = mid + 1;
+		}
+	}
+	slice[0] = high;
+}
+
+//Deberia ser correcto, buscar el elemento en B, que inicia despues de que sEnd termina.
+//O sea, el siguiente numero mayor a sEnd.
+__device__ void binarySearchStart(int *B, int lB, int sEnd, int *slice){
+	int low = 0;
+	int high = lB - 1;
+
+	while(low <= high){
+		int mid = (low + high)/2;
+		if (B[2*mid] <= sEnd){
+			low = mid + 1;
+		} else { // mid > target
+			high = mid - 1;
+		}
+	}
+	slice[1] = low;
+}
+
+__device__ bool isAnIntersect(int aStart, int aEnd, int bStart, int bEnd){
+	if ((aEnd < bStart) || (bEnd < aStart)){
+		return false;
+	}
+	else{
+		return true;
+	}
+}
+
+
+__global__ void setIntersection_Kernel2(int *A, int *B, int lA, int lB, int *intercepts, int *lenIntercepts){
+	int Id = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (Id >= lA) return;
+
+	int* slice = new int[2];
+	int aStart = A[2*Id];
+	int aEnd = A[2*Id + 1];
+
+	//Cortamos B segun el a_Id. Via busqueda binarias
+	binarySearchEnds(B, lB, aStart, slice);
+	binarySearchStart(B, lB, aEnd, slice);
+
+	if (slice[0] > slice[1]){
+		//No hay interseccion.
+		return;
+	}
+
+	int *tempInter = new int[2*(slice[1] - slice[0])];  
+	int tempInterFounds = 0;
+	int bStart, bEnd;
+	
+	//Retornamos los intervalos que se intersectan dentro de las slices.
+	for (int i = slice[0]; i <= slice[1]; i++){
+		bStart = B[2*i];
+		bEnd = B[2*i + 1];
+		if (isAnIntersect(aStart, aEnd, bStart, bEnd)){
+			//tempInter[2 * tempInterFounds] = Id;
+			//tempInter[2 * tempInterFounds + 1] = i; 
+			intercepts[Id * 2 * lB + 2*tempInterFounds] = Id; 
+			intercepts[Id * 2 * lB + 2*tempInterFounds + 1] = i;
+
+			tempInterFounds += 1;
+		}
+	}
+
+
+
 }
 
 int main(int argc, char **argv){
@@ -129,5 +231,52 @@ int main(int argc, char **argv){
 
 	delete[] intersecciones;
 
+	//Kernel 2 - Binary Search + ...
+
+	cudaEvent_t ct1, ct2;
+	int *Adev, *Bdev;
+	int *interdev, *interhost;
+	int *intercepts, *interceptsdev, *lenIntercepts, *lenInterceptsdev;
+	lenIntercepts = 0;
+
+    cudaEventCreate(&ct1);
+    cudaEventCreate(&ct2);
+
+    //KERNEL 1
+
+    int gs, bs;
+    cudaMalloc((void**)&Adev, 2 * la * sizeof(int));
+    cudaMalloc((void**)&Bdev, 2 * lb * sizeof(int));
+
+    cudaMalloc((void**)&interceptsdev, 2 * la * lb * sizeof(int));
+    cudaMemset(interceptsdev, -1, (2* la* lb) * sizeof(int));
+
+    cudaMalloc((void**)&lenInterceptsdev, sizeof(int));
+
+    cudaMemcpy(Adev, A, 2 * la * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(Bdev, B, 2 * lb * sizeof(int), cudaMemcpyHostToDevice); 
+    cudaMemcpy(lenInterceptsdev, lenIntercepts, sizeof(int), cudaMemcpyHostToDevice); 
+
+    bs = 256;
+    gs = (int)ceil((float) la / bs);
+
+    cudaEventRecord(ct1);
+    setIntersection_Kernel2<<<gs, bs>>>(Adev, Bdev, la, lb, interceptsdev, lenInterceptsdev);
+    cudaEventRecord(ct2);
+    cudaEventSynchronize(ct2);
+
+    float dt;
+    cudaEventElapsedTime(&dt, ct1, ct2);
+
+    intercepts = new int[2 * la * lb];
+    cudaMemcpy(intercepts, interceptsdev, (2 * la * lb) * sizeof(int), cudaMemcpyDeviceToHost);
+
+    printf("\nTiempo GPU 2 + Binary Searchs: %f[ms]\n", dt);
+    
+    WriteHash(intercepts, la, lb, "outputkernel2.txt");
+
+
+
 	return 0;
+
 }

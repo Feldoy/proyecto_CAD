@@ -9,11 +9,11 @@ lista_numeros_2 = list()
 lista_A = list()
 lista_B = list()
 
-for i in range(200):
-    lista_numeros_1.append(random.randint(1, 1000))
+for i in range(5000):
+    lista_numeros_1.append(random.randint(1, 100000))
 
-for i in range(300):
-    lista_numeros_2.append(random.randint(1, 1000))
+for i in range(10000):
+    lista_numeros_2.append(random.randint(1, 150000))
 
 lista_sin_repeticion_1 = set(lista_numeros_1)
 lista_sin_repeticion_2 = set(lista_numeros_2)
