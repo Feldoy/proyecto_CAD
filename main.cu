@@ -79,6 +79,92 @@ void interseccionConjuntos(int* A, int *B, int *intersecciones,
 	}
 }
 
+
+//Buscar el indice del intervalo de B que termina antes de que sStart inicie.
+//Bend < astart
+__device__ void binarySearchEnds(int *B, int lB, int aStart, int *slice){
+	int low = 0;
+	int high = lB - 1;
+
+	while(low <= high){
+		int mid = (low + high)/2;
+
+		if (B[2*mid + 1] >= aStart){
+			high = mid - 1;
+		} else { // mid > target
+			low = mid + 1;
+		}
+	}
+	slice[0] = high;
+}
+
+//aend < Bstart
+//Deberia ser correcto, buscar el elemento en B, que inicia despues de que sEnd termina.
+//O sea, el siguiente numero mayor a sEnd.
+__device__ void binarySearchStart(int *B, int lB, int sEnd, int *slice){
+	int low = 0;
+	int high = lB - 1;
+
+	while(low <= high){
+		int mid = (low + high)/2;
+		if (B[2*mid] <= sEnd){
+			low = mid + 1;
+		} else { // mid > target
+			high = mid - 1;
+		}
+	}
+	slice[1] = low;
+}
+
+__device__ bool isAnIntersect(int aStart, int aEnd, int bStart, int bEnd){
+	if ((aEnd < bStart) || (bEnd < aStart)){
+		return false;
+	}
+	else{
+		return true;
+	}
+}
+
+
+
+__global__ void setIntersection_Kernel2(int *A, int *B, int lA, int lB, int *intercepts, int *lenIntercepts){
+	int Id = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (Id >= lA) return;
+
+	int* slice = new int[2];
+	int aStart = A[2*Id];
+	int aEnd = A[2*Id + 1];
+
+	binarySearchEnds(B, lB, aStart, slice);
+	binarySearchStart(B, lB, aEnd, slice);
+
+	printf("(%d, %d) - slice (%d, %d)\n",aStart, aEnd, slice[0]+1, slice[1]-1);
+
+	if (slice[0] > slice[1]){
+		//No hay interseccion.
+		return;
+	}
+
+	int *tempInter = new int[2*(slice[1] - slice[0])];  
+	int tempInterFounds = 0;
+	int bStart, bEnd;
+	
+	for (int i = slice[0]; i <= slice[1]; i++){
+		bStart = B[2*i];
+		bEnd = B[2*i + 1];
+		if (isAnIntersect(aStart, aEnd, bStart, bEnd)){
+			tempInter[2 * tempInterFounds] = Id;
+			tempInter[2 * tempInterFounds + 1] = i; 
+			tempInterFounds += 1;
+		}
+	}
+	
+	__syncthreads();
+	atomicAdd(lenIntercepts, tempInterFounds);
+
+}
+
 int main(int argc, char **argv){
 
 	// Largo del arreglo A y B, respectivamente.
@@ -88,7 +174,7 @@ int main(int argc, char **argv){
 	int *intersecciones;
 	clock_t t1, t2;
 	
-	char filename[] = {"input.txt\0"};
+	char filename[] = {"inputmid.txt\0"};
 	char outputFilename[] = {"output.txt\0"};
 
 	Read(&A, &B, &la, &lb, filename); 
@@ -110,5 +196,44 @@ int main(int argc, char **argv){
 	Write(intersecciones, N, outputFilename);
 
 	delete[] intersecciones;
+
+	//Kernel 2 - Binary Search + ...
+
+	cudaEvent_t ct1, ct2;
+	int *Adev, *Bdev;
+	int *interdev, *interhost;
+	int *intercepts, *interceptsdev, *lenIntercepts, *lenInterceptsdev;
+	lenIntercepts = 0;
+
+    cudaEventCreate(&ct1);
+    cudaEventCreate(&ct2);
+
+    //KERNEL 1
+
+    int gs, bs;
+    cudaMalloc((void**)&Adev, 2 * la * sizeof(int));
+    cudaMalloc((void**)&Bdev, 2 * lb * sizeof(int));
+    cudaMalloc((void**)&interceptsdev, 2 * la * lb * sizeof(int));
+    cudaMalloc((void**)&lenInterceptsdev, sizeof(int));
+
+    cudaMemcpy(Adev, A, 2 * la * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(Bdev, B, 2 * lb * sizeof(int), cudaMemcpyHostToDevice); 
+    cudaMemcpy(lenInterceptsdev, lenIntercepts, sizeof(int), cudaMemcpyHostToDevice); 
+
+    bs = 256;
+    gs = (int)ceil((float) la / bs);
+
+    cudaEventRecord(ct1);
+    setIntersection_Kernel2<<<gs, bs>>>(Adev, Bdev, la, lb, interceptsdev, lenInterceptsdev);
+    cudaEventRecord(ct2);
+    cudaEventSynchronize(ct2);
+
+    float dt;
+    cudaEventElapsedTime(&dt, ct1, ct2);
+
+    //cudaMemcpy(&maxValueHost, max, sizeof(int), cudaMemcpyDeviceToHost);
+    printf("\nTiempo GPU1: %f[ms]\n", dt);
+    //printf("Maximo: %d\n", maxValueHost);
+
 
 }
